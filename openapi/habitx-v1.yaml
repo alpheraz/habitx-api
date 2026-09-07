@@ -1,0 +1,472 @@
+openapi: 3.1.0
+info:
+  title: Habit X Public API
+  version: 1.0.0
+  description: |
+    Online-first Habit X application API.
+    Server is the source of truth. iOS may cache / optimistically update locally.
+servers:
+  - url: https://api.habitx.example/api/habitx/v1
+    description: Production (placeholder host)
+  - url: http://127.0.0.1:4600/api/habitx/v1
+    description: Local VPS bind
+security:
+  - bearerAuth: []
+tags:
+  - name: Health
+  - name: Me
+  - name: Habits
+  - name: Completions
+paths:
+  /health:
+    get:
+      tags: [Health]
+      security: []
+      summary: Liveness
+      operationId: getHealth
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /ready:
+    get:
+      tags: [Health]
+      security: []
+      summary: Readiness
+      operationId: getReady
+      responses:
+        "200":
+          description: Ready to serve
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+        "503":
+          description: Not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /me:
+    get:
+      tags: [Me]
+      summary: Current authenticated user
+      operationId: getMe
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /habits:
+    get:
+      tags: [Habits]
+      summary: List habits for the authenticated user
+      operationId: listHabits
+      responses:
+        "200":
+          description: Habit list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [habits]
+                properties:
+                  habits:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Habit"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Habits]
+      summary: Create a habit
+      operationId: createHabit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HabitDraft"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Habit"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /habits/{habitId}:
+    parameters:
+      - $ref: "#/components/parameters/habitId"
+    get:
+      tags: [Habits]
+      summary: Get a habit by id
+      operationId: getHabit
+      responses:
+        "200":
+          description: Habit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Habit"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Habits]
+      summary: Update a habit
+      operationId: updateHabit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HabitPatch"
+      responses:
+        "200":
+          description: Updated habit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Habit"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Habits]
+      summary: Archive/delete a habit
+      operationId: deleteHabit
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /habits/{habitId}/completions:
+    parameters:
+      - $ref: "#/components/parameters/habitId"
+    post:
+      tags: [Completions]
+      summary: Set completion for a habit on a calendar day
+      description: |
+        Idempotent by (userId, habitId, day). Re-posting the same day updates
+        isCompleted rather than creating duplicates.
+      operationId: setHabitCompletion
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetCompletionRequest"
+      responses:
+        "200":
+          description: Completion upserted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HabitCompletion"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /completions:
+    get:
+      tags: [Completions]
+      summary: Completions for a calendar day (all habits)
+      operationId: listCompletionsForDay
+      parameters:
+        - name: day
+          in: query
+          required: true
+          description: Calendar day in the user's timezone as YYYY-MM-DD
+          schema:
+            type: string
+            format: date
+        - name: timeZone
+          in: query
+          required: false
+          description: IANA timezone (e.g. America/Chicago). Defaults to account preference later.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Completions for the day
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [day, completions]
+                properties:
+                  day:
+                    type: string
+                    format: date
+                  completions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HabitCompletion"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    habitId:
+      name: habitId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Unauthorized:
+      description: Missing or invalid auth
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found or not owned by user
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BadRequest:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    HealthResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        service:
+          type: string
+          example: habitx-api
+    ReadyResponse:
+      type: object
+      required: [ready]
+      properties:
+        ready:
+          type: boolean
+        database:
+          type: string
+          enum: [up, down, stub]
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              example: HABIT_NOT_FOUND
+            message:
+              type: string
+            requestId:
+              type: string
+    User:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+    HabitFrequency:
+      type: string
+      enum: [daily, weekly, monthly]
+    Habit:
+      type: object
+      required:
+        - id
+        - name
+        - colorHex
+        - frequency
+        - scheduleDays
+        - createdAt
+        - updatedAt
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        details:
+          type: string
+          nullable: true
+          maxLength: 2000
+        tagName:
+          type: string
+          nullable: true
+          maxLength: 60
+        colorHex:
+          type: string
+          pattern: "^#[0-9A-Fa-f]{6}$"
+        frequency:
+          $ref: "#/components/schemas/HabitFrequency"
+        scheduleDays:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 7
+          description: "1=Sunday … 7=Saturday (matches iOS Habit.scheduleDays)"
+        reminderTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: Instant whose time-of-day is the reminder; date part ignored client-side
+        status:
+          type: string
+          enum: [active, archived]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    HabitDraft:
+      type: object
+      required: [name, colorHex, frequency]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        details:
+          type: string
+          maxLength: 2000
+        tagName:
+          type: string
+          maxLength: 60
+        colorHex:
+          type: string
+          pattern: "^#[0-9A-Fa-f]{6}$"
+        frequency:
+          $ref: "#/components/schemas/HabitFrequency"
+        scheduleDays:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 7
+        reminderTime:
+          type: string
+          format: date-time
+          nullable: true
+    HabitPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        details:
+          type: string
+          nullable: true
+          maxLength: 2000
+        tagName:
+          type: string
+          nullable: true
+          maxLength: 60
+        colorHex:
+          type: string
+          pattern: "^#[0-9A-Fa-f]{6}$"
+        frequency:
+          $ref: "#/components/schemas/HabitFrequency"
+        scheduleDays:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 7
+        reminderTime:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [active, archived]
+    SetCompletionRequest:
+      type: object
+      required: [day, isCompleted]
+      properties:
+        day:
+          type: string
+          format: date
+          description: YYYY-MM-DD in the user's habit timezone
+        isCompleted:
+          type: boolean
+        timeZone:
+          type: string
+          description: IANA timezone for day boundary interpretation
+        value:
+          type: number
+          nullable: true
+          description: Optional quantity for non-binary habits (future)
+    HabitCompletion:
+      type: object
+      required: [id, habitId, day, isCompleted, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        habitId:
+          type: string
+          format: uuid
+        day:
+          type: string
+          format: date
+        isCompleted:
+          type: boolean
+        value:
+          type: number
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

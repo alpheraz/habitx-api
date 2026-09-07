@@ -1,0 +1,23 @@
+[Unit]
+Description=Habit X API (:4600)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/alpheraz/habitx-api
+Environment=NODE_ENV=production
+Environment=HABITX_HOST=127.0.0.1
+Environment=HABITX_PORT=4600
+EnvironmentFile=-/home/alpheraz/habitx-api/.env
+ExecStart=/usr/bin/node /home/alpheraz/habitx-api/src/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+
+# Install later (do not enable until handlers + DB are ready):
+#   cp deploy/habitx-api.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now habitx-api.service
