@@ -2,7 +2,9 @@
 -- HabitX production schema — 0001_init.sql
 -- Target: Supabase (Postgres 15+)
 --
--- Apply in Supabase SQL Editor (or supabase db push) AFTER creating the project.
+-- ONE-TIME migration. Do not re-run after tables exist.
+-- Apply security follow-up: 0002_security_hardening.sql (idempotent).
+-- Apply in Supabase SQL Editor AFTER creating the project.
 -- Do not apply against Clawbot JsonStore. Do not embed secrets here.
 --
 -- Architecture:
@@ -24,6 +26,7 @@ create extension if not exists citext;
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+set search_path = public, pg_temp
 as $$
 begin
   new.updated_at = now();
@@ -58,7 +61,7 @@ create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 begin
   insert into public.profiles (id, display_name, email, apple_user_id)
@@ -74,7 +77,8 @@ begin
     ),
     new.email,
     new.raw_user_meta_data->>'provider_id'
-  );
+  )
+  on conflict (id) do nothing;
   return new;
 end;
 $$;
@@ -211,6 +215,29 @@ create index habit_subtask_completions_habit_day_idx
 create trigger habit_subtask_completions_set_updated_at
 before update on public.habit_subtask_completions
 for each row execute function public.set_updated_at();
+
+create or replace function public.enforce_subtask_habit_match()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if not exists (
+    select 1
+    from public.habit_subtasks s
+    where s.id = new.subtask_id
+      and s.habit_id = new.habit_id
+      and s.user_id = new.user_id
+  ) then
+    raise exception 'habit_subtask_completions.habit_id must match habit_subtasks';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger habit_subtask_completions_habit_match
+before insert or update on public.habit_subtask_completions
+for each row execute function public.enforce_subtask_habit_match();
 
 -- Append-only-ish history for Q. Updates are allowed for metadata correction
 -- but product code should insert new events, not overwrite history.
@@ -535,11 +562,31 @@ alter table public.q_interactions enable row level security;
 alter table public.q_evidence enable row level security;
 alter table public.q_recommendations enable row level security;
 
--- Owner-only helpers (stable; used by relationship policies)
+alter table public.profiles force row level security;
+alter table public.habits force row level security;
+alter table public.habit_schedules force row level security;
+alter table public.habit_subtasks force row level security;
+alter table public.habit_completions force row level security;
+alter table public.habit_subtask_completions force row level security;
+alter table public.habit_events force row level security;
+alter table public.routines force row level security;
+alter table public.routine_habits force row level security;
+alter table public.goals force row level security;
+alter table public.goal_habits force row level security;
+alter table public.goal_routines force row level security;
+alter table public.goal_milestones force row level security;
+alter table public.mood_checkins force row level security;
+alter table public.gratitude_entries force row level security;
+alter table public.day_scores force row level security;
+alter table public.q_interactions force row level security;
+alter table public.q_evidence force row level security;
+alter table public.q_recommendations force row level security;
+
 create or replace function public.is_own(_user_id uuid)
 returns boolean
 language sql
 stable
+set search_path = public, pg_temp
 as $$
   select _user_id = auth.uid();
 $$;
@@ -720,7 +767,7 @@ create policy q_recommendations_update_status_own on public.q_recommendations
   using (user_id = auth.uid())
   with check (
     user_id = auth.uid()
-    and status in ('shown', 'accepted', 'rejected', 'applied', 'expired', 'evaluated')
+    and status in ('accepted', 'rejected')
   );
 
 -- -----------------------------------------------------------------------------
@@ -730,13 +777,29 @@ create policy q_recommendations_update_status_own on public.q_recommendations
 -- service_role: full (bypasses RLS) — VPS only
 -- -----------------------------------------------------------------------------
 
+revoke usage on schema public from anon;
 revoke all on all tables in schema public from anon;
 revoke all on all sequences in schema public from anon;
+revoke all on all functions in schema public from anon;
+
+revoke all on function public.set_updated_at() from public, anon, authenticated;
+revoke all on function public.is_own(uuid) from public, anon, authenticated;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+revoke all on function public.enforce_subtask_habit_match() from public, anon, authenticated;
+grant execute on function public.is_own(uuid) to authenticated, service_role;
+
+alter default privileges in schema public revoke all on tables from anon;
+alter default privileges in schema public revoke all on sequences from anon;
+alter default privileges in schema public revoke all on functions from anon;
+alter default privileges in schema public revoke all on tables from public;
+alter default privileges in schema public revoke all on sequences from public;
+alter default privileges in schema public revoke all on functions from public;
 
 grant usage on schema public to authenticated, service_role;
 
+grant select, update on public.profiles to authenticated;
+
 grant select, insert, update, delete on
-  public.profiles,
   public.habits,
   public.habit_schedules,
   public.habit_subtasks,
@@ -761,8 +824,13 @@ grant select on
   public.q_recommendations
 to authenticated;
 
-grant update (status, accepted_at, rejected_at, applied_at, outcome_evaluated_at)
+grant update (status, accepted_at, rejected_at)
   on public.q_recommendations to authenticated;
 
 grant all on all tables in schema public to service_role;
 grant all on all sequences in schema public to service_role;
+grant all on all functions in schema public to service_role;
+
+alter default privileges in schema public grant all on tables to service_role;
+alter default privileges in schema public grant all on sequences to service_role;
+alter default privileges in schema public grant all on functions to service_role;

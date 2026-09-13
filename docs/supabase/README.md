@@ -2,14 +2,14 @@
 
 Canonical migration: [`0001_init.sql`](./0001_init.sql)
 
-## Apply (Phase 1)
+## Apply
 
-1. Create a Supabase project (US or closest region).
-2. Authentication → Providers → **Sign in with Apple** (later; not required to apply SQL).
-3. SQL Editor → paste `0001_init.sql` → Run.
+1. Create a Supabase project.
+2. SQL Editor → run [`0001_init.sql`](./0001_init.sql) **once**.
+3. SQL Editor → run [`0002_security_hardening.sql`](./0002_security_hardening.sql) (idempotent; required if 0001 already ran).
 4. Confirm tables exist under Table Editor.
 
-Do **not** apply this to Clawbot or the in-memory habitx-api store.
+Do **not** re-run 0001 after tables exist. Do **not** apply this to Clawbot.
 
 ## Credentials
 

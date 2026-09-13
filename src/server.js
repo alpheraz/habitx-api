@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getSupabaseAdmin, getSupabaseConfig } from './lib/supabase.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -152,8 +153,24 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'habitx-api' });
 });
 
-app.get('/ready', (_req, res) => {
-  res.json({ ready: true, database: 'stub' });
+app.get('/ready', async (_req, res) => {
+  const sb = getSupabaseConfig();
+  let supabase = 'missing';
+  if (sb.configured) {
+    try {
+      const admin = getSupabaseAdmin();
+      const { error } = await admin.from('profiles').select('id').limit(1);
+      supabase = error ? 'error' : 'up';
+    } catch {
+      supabase = 'error';
+    }
+  }
+  const ready = true;
+  res.json({
+    ready,
+    database: 'stub',
+    supabase
+  });
 });
 
 app.get('/openapi/habitx-v1.yaml', (_req, res) => {
