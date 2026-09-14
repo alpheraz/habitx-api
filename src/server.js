@@ -13,6 +13,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getSupabaseAdmin, getSupabaseConfig } from './lib/supabase.js';
+import { requireAuth, sendError } from './lib/auth.js';
+import { qRouter } from './routes/q.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -117,20 +119,11 @@ app.use((req, res, next) => {
   next();
 });
 
-function sendError(res, status, code, message, requestId) {
-  res.status(status).json({
-    error: { code, message, requestId }
-  });
-}
-
-function requireAuth(req, res, next) {
-  const auth = req.header('authorization') || '';
-  if (auth === `Bearer ${DEV_TOKEN}`) {
-    req.user = DEMO_USER;
-    return next();
-  }
-  return sendError(res, 401, 'UNAUTHORIZED', 'Authentication required', req.requestId);
-}
+const DEMO_USER = {
+  id: 'user_demo',
+  displayName: 'Jake',
+  email: 'jake@habitx.local'
+};
 
 function isHexColor(v) {
   return typeof v === 'string' && /^#[0-9A-Fa-f]{6}$/.test(v);
@@ -158,18 +151,19 @@ app.get('/ready', async (_req, res) => {
   let supabase = 'missing';
   if (sb.configured) {
     try {
-      const admin = getSupabaseAdmin();
-      const { error } = await admin.from('profiles').select('id').limit(1);
+      const db = getSupabaseAdmin() ?? (await import('./lib/supabase.js')).getSupabaseAnon();
+      const { error } = await db.from('profiles').select('id').limit(1);
       supabase = error ? 'error' : 'up';
     } catch {
       supabase = 'error';
     }
   }
-  const ready = true;
   res.json({
-    ready,
+    ready: true,
     database: 'stub',
-    supabase
+    supabase,
+    supabaseServiceRole: sb.hasServiceRole,
+    q: '/api/habitx/v1/q/ask'
   });
 });
 
@@ -178,7 +172,9 @@ app.get('/openapi/habitx-v1.yaml', (_req, res) => {
 });
 
 const v1 = express.Router();
-v1.use(requireAuth);
+v1.use((req, res, next) => {
+  Promise.resolve(requireAuth(req, res, next)).catch(next);
+});
 
 v1.get('/me', (req, res) => {
   res.json(req.user);
@@ -324,6 +320,7 @@ v1.get('/completions', (req, res) => {
   res.json({ day, completions: list });
 });
 
+app.use('/api/habitx/v1/q', qRouter);
 app.use('/api/habitx/v1', v1);
 
 app.use((req, res) => {
@@ -333,5 +330,6 @@ app.use((req, res) => {
 app.listen(PORT, HOST, () => {
   console.log(`habitx-api listening on http://${HOST}:${PORT}`);
   console.log(`openapi: http://${HOST}:${PORT}/openapi/habitx-v1.yaml`);
-  console.log(`dev auth: Authorization: Bearer ${DEV_TOKEN}`);
+  const sb = getSupabaseConfig();
+  console.log(`supabase configured=${sb.configured} serviceRole=${sb.hasServiceRole}`);
 });
