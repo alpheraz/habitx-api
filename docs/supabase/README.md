@@ -7,7 +7,8 @@ Canonical migration: [`0001_init.sql`](./0001_init.sql)
 1. Create a Supabase project.
 2. SQL Editor → run [`0001_init.sql`](./0001_init.sql) **once**.
 3. SQL Editor → run [`0002_security_hardening.sql`](./0002_security_hardening.sql) (idempotent; required if 0001 already ran).
-4. Confirm tables exist under Table Editor.
+4. SQL Editor → run [`0003_journal_entries.sql`](./0003_journal_entries.sql) (synced private journals; excluded from Q).
+5. Confirm tables exist under Table Editor.
 
 Do **not** re-run 0001 after tables exist. Do **not** apply this to Clawbot.
 
@@ -24,7 +25,7 @@ Never put the service role key in Swift, Git, or Claude prompts.
 
 | Table | iOS (RLS) | VPS service role |
 |-------|-----------|------------------|
-| profiles, habits, schedules, subtasks, completions, routines, goals, milestones, mood, gratitude | CRUD own rows | Full |
+| profiles, habits, schedules, subtasks, completions, routines, goals, milestones, mood, gratitude, journal | CRUD own rows | Full (journals never fed to Q) |
 | habit_events | insert + select own | Full |
 | day_scores | **select only** | compute + upsert |
 | q_interactions, q_evidence | **select only** | write |
