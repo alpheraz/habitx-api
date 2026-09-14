@@ -17,6 +17,7 @@ tags:
   - name: Me
   - name: Habits
   - name: Completions
+  - name: Q
 paths:
   /health:
     get:
@@ -231,6 +232,63 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /q/ask:
+    post:
+      tags: [Q]
+      summary: Ask Q about the authenticated user's HabitX data
+      description: |
+        Requires a Supabase user JWT. The demo token is rejected.
+        user_id is taken from the JWT, never from the body.
+      operationId: askQ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QAskRequest"
+      responses:
+        "200":
+          description: Structured evidence answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QAskResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Supabase not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /q/interactions:
+    get:
+      tags: [Q]
+      summary: Recent Q interactions for the authenticated user
+      operationId: listQInteractions
+      responses:
+        "200":
+          description: Recent Q history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [interactions]
+                properties:
+                  interactions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/QInteraction"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Service role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   securitySchemes:
     bearerAuth:
@@ -283,6 +341,73 @@ components:
         database:
           type: string
           enum: [up, down, stub]
+        supabase:
+          type: string
+          enum: [up, down, missing, error]
+        supabaseServiceRole:
+          type: boolean
+        supabaseAnon:
+          type: boolean
+        q:
+          type: string
+    QAskRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 4000
+    QAskResponse:
+      type: object
+      required: [question, answer, analysisVersion, evidence, persisted]
+      properties:
+        question:
+          type: string
+        answer:
+          type: string
+        analysisVersion:
+          type: string
+          example: habitx-q-v0
+        evidence:
+          type: array
+          items:
+            type: object
+            required: [sourceType, metric, value]
+            properties:
+              sourceType:
+                type: string
+              metric:
+                type: string
+              value:
+                type: number
+        recommendation:
+          type: object
+          nullable: true
+        persisted:
+          type: boolean
+        persistReason:
+          type: string
+          nullable: true
+        interactionId:
+          type: string
+          format: uuid
+          nullable: true
+    QInteraction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        question:
+          type: string
+        answer:
+          type: string
+        analysis_version:
+          type: string
+        created_at:
+          type: string
+          format: date-time
     ErrorResponse:
       type: object
       required: [error]

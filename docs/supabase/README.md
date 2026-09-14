@@ -34,5 +34,5 @@ Never put the service role key in Swift, Git, or Claude prompts.
 
 Phase 2: supabase-swift + SIWA + repositories  
 Phase 3: domain verification  
-Phase 4: VPS JWT verify + Q  
+Phase 4: VPS JWT verify + Q — shipped in habitx-api (`POST /api/habitx/v1/q/ask`)  
 Phase 5: A/B isolation tests  

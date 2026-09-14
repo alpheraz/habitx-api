@@ -14,6 +14,12 @@ export function sendError(res, status, code, message, requestId) {
   });
 }
 
+export function asyncHandler(fn) {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
 /**
  * Demo in-memory routes only. Prefer Supabase JWT when present.
  */

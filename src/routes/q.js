@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { requireSupabaseUser, sendError } from '../lib/auth.js';
+import { asyncHandler, requireSupabaseUser, sendError } from '../lib/auth.js';
 import { evidenceFromContext, loadUserContext, persistQResult } from '../lib/user-data.js';
 import { getSupabaseAdmin } from '../lib/supabase.js';
 
 export const qRouter = Router();
-qRouter.use(requireSupabaseUser);
+qRouter.use(asyncHandler(requireSupabaseUser));
 
 function buildAnswer(question, context) {
   const evidenceLines = [
@@ -41,7 +41,7 @@ function buildAnswer(question, context) {
   };
 }
 
-qRouter.post('/ask', async (req, res) => {
+qRouter.post('/ask', asyncHandler(async (req, res) => {
   const question = String(req.body?.question ?? '').trim();
   if (!question || question.length > 4000) {
     return sendError(res, 400, 'VALIDATION_ERROR', 'question is required', req.requestId);
@@ -78,9 +78,9 @@ qRouter.post('/ask', async (req, res) => {
     persistReason: persist.reason ?? null,
     interactionId: persist.interactionId ?? null
   });
-});
+}));
 
-qRouter.get('/interactions', async (req, res) => {
+qRouter.get('/interactions', asyncHandler(async (req, res) => {
   const admin = getSupabaseAdmin();
   if (!admin) {
     return sendError(res, 503, 'SERVICE_ROLE_REQUIRED', 'Q history requires SUPABASE_SECRET_KEY (service_role)', req.requestId);
@@ -95,4 +95,4 @@ qRouter.get('/interactions', async (req, res) => {
     return sendError(res, 500, 'QUERY_FAILED', error.message, req.requestId);
   }
   res.json({ interactions: data ?? [] });
-});
+}));

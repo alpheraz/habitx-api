@@ -21,7 +21,6 @@ const root = join(__dirname, '..');
 
 const HOST = process.env.HABITX_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.HABITX_PORT ?? 4600);
-const DEV_TOKEN = process.env.HABITX_DEV_TOKEN ?? 'habitx-dev-demo-token';
 
 /** @typedef {'daily'|'weekly'|'monthly'} HabitFrequency */
 /** @typedef {'active'|'archived'} HabitStatus */
@@ -119,12 +118,6 @@ app.use((req, res, next) => {
   next();
 });
 
-const DEMO_USER = {
-  id: 'user_demo',
-  displayName: 'Jake',
-  email: 'jake@habitx.local'
-};
-
 function isHexColor(v) {
   return typeof v === 'string' && /^#[0-9A-Fa-f]{6}$/.test(v);
 }
@@ -146,23 +139,32 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'habitx-api' });
 });
 
+async function probeSupabase(sb) {
+  if (!sb.configured) return 'missing';
+  try {
+    if (sb.hasServiceRole) {
+      const db = getSupabaseAdmin();
+      const { error } = await db.from('profiles').select('id').limit(1);
+      return error ? 'error' : 'up';
+    }
+    const url = (process.env.SUPABASE_URL ?? '').replace(/\/$/, '');
+    const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_SECRET_KEY;
+    const res = await fetch(`${url}/auth/v1/health`, { headers: { apikey: key } });
+    return res.ok ? 'up' : 'error';
+  } catch {
+    return 'error';
+  }
+}
+
 app.get('/ready', async (_req, res) => {
   const sb = getSupabaseConfig();
-  let supabase = 'missing';
-  if (sb.configured) {
-    try {
-      const db = getSupabaseAdmin() ?? (await import('./lib/supabase.js')).getSupabaseAnon();
-      const { error } = await db.from('profiles').select('id').limit(1);
-      supabase = error ? 'error' : 'up';
-    } catch {
-      supabase = 'error';
-    }
-  }
+  const supabase = await probeSupabase(sb);
   res.json({
     ready: true,
     database: 'stub',
     supabase,
     supabaseServiceRole: sb.hasServiceRole,
+    supabaseAnon: sb.hasAnonKey,
     q: '/api/habitx/v1/q/ask'
   });
 });
@@ -327,9 +329,18 @@ app.use((req, res) => {
   sendError(res, 404, 'NOT_FOUND', `No route ${req.method} ${req.path}`, req.requestId);
 });
 
+app.use((err, req, res, _next) => {
+  console.error(err);
+  if (res.headersSent) return;
+  sendError(res, 500, 'INTERNAL_ERROR', 'Internal error', req.requestId);
+});
+
 app.listen(PORT, HOST, () => {
   console.log(`habitx-api listening on http://${HOST}:${PORT}`);
   console.log(`openapi: http://${HOST}:${PORT}/openapi/habitx-v1.yaml`);
   const sb = getSupabaseConfig();
-  console.log(`supabase configured=${sb.configured} serviceRole=${sb.hasServiceRole}`);
+  console.log(`supabase configured=${sb.configured} serviceRole=${sb.hasServiceRole} anon=${sb.hasAnonKey}`);
+  if (sb.configured && !sb.hasServiceRole) {
+    console.warn('SUPABASE_SECRET_KEY is not a service_role key — Q persistence is disabled');
+  }
 });
